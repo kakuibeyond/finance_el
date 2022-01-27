@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
 import stanza
 import jieba
+import time
 import logging
 logging.basicConfig(level=logging.INFO)
-# stanza.download('zh')
+download_dir='D:\data\stanza_resources'
+# stanza.download('zh',model_dir=download_dir)
 
 
 # 可以通过pipeline预加载不同语言的模型，也可以通过pipeline选择不同的处理模块，还可以选择是否使用GPU：
 zh_nlp = stanza.Pipeline('zh', processors='tokenize,ner,pos', 
                                 tokenize_pretokenized=True,
-                                use_gpu=False)
+                                use_gpu=False,
+                                dir=download_dir)
 
 
 # def ner(text):
@@ -41,12 +44,17 @@ def ner_single(single_text):
 
 # 文档列表，返回与文档列表等长的标签列表，句子无实体用'O'表示
 def ner(docs):
-    logging.info('=====len of doc====={}'.format(len(docs)))
+    logging.info('=====len of doc:{}====='.format(len(docs)))
+    t1=time.time()
     text_w=[jieba.lcut(t) for t in docs]
+    t2=time.time()
+    logging.debug('分词耗时:{:.2f}秒'.format(t2-t1))
     res=[]
     keep_type=['GPE','LOC','PERSON','ORG']
     # logging.info('===开始加载文档===')
     doc = zh_nlp(text_w)
+    t3=time.time()
+    logging.debug('加载文档耗时:{:.2f}秒'.format(t3-t2))
     # logging.info('===结束加载文档===')
     for i, sent in enumerate(doc.sentences):
         # print("Sentence: " + sent.text)  # 因为提前分词，所以这里文本（自带空格分割）和后面分词结果打印出来一模一样
@@ -61,6 +69,7 @@ def ner(docs):
         else:
             res.append('O')
     assert len(res)==len(docs)
+    logging.debug('筛选实体耗时:{:.2f}秒'.format(time.time()-t3))
     return res
     
 # res=ner(text)
