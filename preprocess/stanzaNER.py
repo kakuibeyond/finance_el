@@ -50,7 +50,7 @@ def ner(docs):
     t2=time.time()
     logging.debug('分词耗时:{:.2f}秒'.format(t2-t1))
     res=[]
-    keep_type=['GPE','LOC','PERSON','ORG']
+    keep_type=['GPE','LOC','PERSON','ORG'] #PER（人物），LOC（地点），ORG（组织），GPE（地缘政治实体（geo-political entity））
     # logging.info('===开始加载文档===')
     doc = zh_nlp(text_w)
     t3=time.time()
