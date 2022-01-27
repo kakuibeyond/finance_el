@@ -6,4 +6,5 @@ data/
 utils/
 __pycache__/
 log/
+*.log
 *.csv
