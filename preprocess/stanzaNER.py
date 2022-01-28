@@ -59,7 +59,7 @@ def ner(docs):
     for i, sent in enumerate(doc.sentences):
         # print("Sentence: " + sent.text)  # 因为提前分词，所以这里文本（自带空格分割）和后面分词结果打印出来一模一样
         # print("Tokenize：" + '||'.join(token.text for token in sent.tokens))  # 中文分词
-        curr_en=set()# 当前句子实体集合
+        curr_en=set()# 当前句子实体集合 无重复
         for ent in sent.ents:
             if ent.type in keep_type:
                 t=ent.text.replace(' ','')
