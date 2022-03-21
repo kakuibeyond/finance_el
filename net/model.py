@@ -1,70 +1,124 @@
+import imp
 import torch
 import torch.nn as nn
+from config import ModelCofig
 from module import Features_Link
+from transformers import BertModel
 # from .task import Locate_Entity, Link_KB
 # from .dataset import text2bert, seqs2batch
+from tqdm import tqdm
+from sklearn.metrics import precision_score, recall_score, f1_score,accuracy_score
+
+class Link_KB(nn.Module):
+    """
+    输入 实体特征、知识特征，预测两者链接得分
+    """
+
+    def __init__(self,
+                 hidden_dim):
+        super(Link_KB, self).__init__()
+
+        # 实体和知识库拼接，只做二分类
+        self.cal_score = nn.Sequential(
+            nn.Linear(hidden_dim * 3, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+        self.hidden_dim = hidden_dim
+
+
+    def forward(self,
+                entity_features,
+                kb_features,
+                labels=None):
+        entity_features_ = nn.MaxPool1d(entity_features.size()[1])(entity_features.transpose(2, 1)).squeeze(-1)
+        kb_features_ = nn.MaxPool1d(kb_features.size()[1])(kb_features.transpose(2, 1)).squeeze(-1)
+
+        features = entity_features_ * kb_features_
+        features = torch.cat([entity_features_, kb_features_, features], -1)
+
+        scores = self.cal_score(features).squeeze(-1)
+
+        loss=None
+        if labels:
+            # 计算实体和知识库拼接得分的损失
+            loss = nn.BCEWithLogitsLoss()(scores, labels)
+
+        return scores,loss
 
 
 # 实体链接模型
 class LinkingModel(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: ModelCofig):
         super(LinkingModel, self).__init__()
         self.config = config
-        self.hidden_dim = hidden_dim
-
-        self.get_features_link = Features_Link(vocab_size,
-                                               embedding_dim,
-                                               embedding,
-                                               hidden_dim)
+        self.bert = BertModel.from_pretrained(config.bert_type)
+        if not config.bert_trainable:
+            for p in self.bert.embeddings.parameters():
+                p.requires_grad = False
 
         # 实体链接得分
-        self.link_kb = Link_KB(hidden_dim, device)
+        self.link_kb = Link_KB(hidden_dim=config.dense_units)
 
 
 
     def cal_link_loss(self,
-                      text_seqs,
-                      kb_seqs,
-                      link_labels
-                      ):
-        # 计算做链接的语义
-        entity_features = self.get_features_link(text_seqs)
+                    text_ids=None,
+                    desc_ids=None,
+                    labels=None
+                    ):
+        text_features = self.bert(**text_ids) # text_ids是一个字典 内部已经封装了bert需要的输入
 
-        # 计算kb文本语义
-        kb_features = self.get_features_link(kb_seqs)
+        desc_features = self.bert(**desc_ids)
 
         # 计算链接得分的损失
-        loss = self.link_kb.cal_loss(entity_features,
-                                     kb_features,
-                                     link_labels)
+        _, loss = self.link_kb(text_features,
+                            desc_features,
+                            labels)
 
         return loss
 
-    def forward(self, text_seq, text, alias_data, entity_predict=None):
-        if entity_predict is None:
-            entity_features, mask_loss = text2bert([text])
-            entity_features, _ = self.get_features_ner(entity_features, mask_loss)
 
-            # 预测实体
-            entity_predict = []
-            entity_B_scores, entity_E_scores = self.get_entity_score(entity_features)
-            entity_B_scores = entity_B_scores[:, 1:]
-            entity_E_scores = entity_E_scores[:, 1:]
+    # 验证集计算得分和loss，这里先用文本匹配的思路做，后期改为从所有cand中寻找最高得分的entity_id
+    def evaluate(self,devloader,check_point=''):
+        if check_point != '':
+            pth=torch.load(check_point,map_location='cpu')
+            self.load_state_dict(pth['weights'])
+        result ={}
+        eval_loss = 0.0
+        nb_eval_steps = 0
+        y_pred=[] # 预测的匹配标签 0、1
+        y_true=[]
+        self.eval()
+        with torch.no_grad():
+            for val_batch in tqdm(devloader, desc="Evaluating"):
+                nb_eval_steps += 1
+                val_batch={k:v.to(self.config.device) for k,v in val_batch.items()}
+                logits,loss = self.forward(**val_batch)
+                y_pred.extend(torch.argmax(logits,dim=-1).detach().cpu().tolist())
+                y_true.extend(val_batch['labels'].cpu().tolist())
+                eval_loss + loss.mean().item()
 
-            entity_B_scores = nn.Sigmoid()(entity_B_scores[0]).tolist()
-            entity_E_scores = nn.Sigmoid()(entity_E_scores[0]).tolist()
-            for entity_B_idx, entity_B_score in enumerate(entity_B_scores):
-                if entity_B_score > 0.5:
-                    # E是在B之后的,索引从B开始
-                    for entity_E_idx, entity_E_score in enumerate(entity_E_scores[entity_B_idx:]):
-                        if entity_E_score > 0.5:
-                            entity_idx = [entity_B_idx, entity_B_idx + entity_E_idx]
+            p = precision_score(y_true, y_pred, average='binary')
+            r = recall_score(y_true, y_pred, average='binary')
+            f1 = f1_score(y_true, y_pred, average='binary')
+            acc = accuracy_score(y_true,y_pred)
 
-                            entity = text[entity_idx[0]:(entity_idx[1] + 1)]
-                            if entity in alias_data:
-                                entity_predict.append(
-                                    (text[entity_idx[0]:(entity_idx[1] + 1)], entity_idx[0], entity_idx[1]))
-                            break
+            eval_loss = eval_loss / nb_eval_steps
+        result = {'p':p,'r':r,'f1':f1,'acc':acc,'evl_ls':eval_loss}
+        return result
+
+    def forward(self,
+                text_ids=None,
+                desc_ids=None,
+                labels=None):
+        
+        loss=None
+        if labels is not None:
+            pass
+            # loss=
 
         # 链接知识库
         results = []

@@ -2,6 +2,7 @@
 
 from os import path
 from torch.optim import Adam
+import torch
 
 # RAW_DATA_DIR = './raw_data'
 PROCESSED_DATA_DIR = './data/deal_pkl'
@@ -39,6 +40,11 @@ IDX2TOKEN_TEMPLATE = 'idx2{level}.pkl'
 EMBEDDING_MATRIX_TEMPLATE = '{type}_embeddings.npy'
 PERFORMANCE_LOG = '{model_type}_performance.log'
 
+
+PRETRAIN_MODEL_NAME={'bert':'bert-base-chinese',
+            'wwm':'hfl/chinese-bert-wwm',
+            'ernie':'nghuyong/ernie-1.0'}
+
 # EXTERNAL_EMBEDDINGS_DIR = path.join(RAW_DATA_DIR, 'embeddings')
 # EXTERNAL_EMBEDDINGS_FILENAME = {
 #     'bert': path.join(EXTERNAL_EMBEDDINGS_DIR, 'chinese_L-12_H-768_A-12'),
@@ -46,7 +52,8 @@ PERFORMANCE_LOG = '{model_type}_performance.log'
 #     'bert_wwm': path.join(EXTERNAL_EMBEDDINGS_DIR, 'chinese_wwm_L-12_H-768_A-12')
 # }
 
-MAX_SEQ_LEN=500
+MAX_SEQ_LEN=300
+MAX_DESC_LEN=50
 
 class ModelCofig(object):
     def __init__(self) -> None:
@@ -63,11 +70,11 @@ class ModelCofig(object):
 
         self.use_bert_input = False
         self.bert_type = 'bert'
-        self.bert_model_file = lambda x: path.join(EXTERNAL_EMBEDDINGS_FILENAME[x], 'bert_model.ckpt')
-        self.bert_config_file = lambda x: path.join(EXTERNAL_EMBEDDINGS_FILENAME[x], 'bert_config.json')
-        self.bert_vocab_file = lambda x: path.join(EXTERNAL_EMBEDDINGS_FILENAME[x], 'vocab.txt')
-        self.bert_layer_num = 1
-        self.bert_seq_len = 50
+        # self.bert_model_file = lambda x: path.join(EXTERNAL_EMBEDDINGS_FILENAME[x], 'bert_model.ckpt')
+        # self.bert_config_file = lambda x: path.join(EXTERNAL_EMBEDDINGS_FILENAME[x], 'bert_config.json')
+        # self.bert_vocab_file = lambda x: path.join(EXTERNAL_EMBEDDINGS_FILENAME[x], 'vocab.txt')
+        # self.bert_layer_num = 1
+        # self.bert_seq_len = 50
         self.bert_trainable = True
 
         # self.use_bichar_input = False
@@ -77,12 +84,12 @@ class ModelCofig(object):
         # self.bichar_embeddings = None
         # self.bichar_vocab_size = None
 
-        self.use_word_input = False
-        self.word_vocab = None
-        self.word_embed_dim = 300
-        self.word_embed_trainable = False
-        self.word_embeddings = None
-        self.word_vocab_size = None
+        # self.use_word_input = False
+        # self.word_vocab = None
+        # self.word_embed_dim = 300
+        # self.word_embed_trainable = False
+        # self.word_embeddings = None
+        # self.word_vocab_size = None
 
         # self.use_charpos_input = False
         # self.charpos_vocab = None
@@ -122,7 +129,12 @@ class ModelCofig(object):
         self.learning_rate = 0.001
         self.optimizer = Adam(self.learning_rate)
         self.threshold = 0.5
+        self.logging_steps = 10 # 每10个step记录一下
+        self.save_steps = 10
+        self.f1_threshold = 0.6
 
         # checkpoint configuration
         self.checkpoint_dir = MODEL_SAVED_DIR
+
+        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         
